@@ -44,7 +44,7 @@
 ![开始游戏示例](https://raw.githubusercontent.com/Maoer233/astrbot_plugin_steam_status_monitor/main/str.png)
 ![结束游戏示例](https://raw.githubusercontent.com/Maoer233/astrbot_plugin_steam_status_monitor/main/stop.png)
 ![成就推送示例](https://raw.githubusercontent.com/Maoer233/astrbot_plugin_steam_status_monitor/main/achievement.png)
-![私聊推送示例](https://raw.githubusercontent.com/Maoer233/astrbot_plugin_steam_status_monitor/main/push_user.png)
+![私聊推送示例](https://raw.githubusercontent.com/MyuriKanao/astrbot_plugin_steam_status_monitor/refs/heads/main/push_user.png)
 
 
 ## 指令列表
