@@ -230,6 +230,84 @@ class SteamStatusMonitorV2(Star):
         except Exception as e:
             logger.warning(f"保存 push_groups.json 失败: {e}")
 
+    # ---- 私聊推送相关持久化 ----
+    def _get_push_users_path(self):
+        """获取 push_users.json 文件路径"""
+        return os.path.join(self.data_dir, "push_users.json")
+
+    def _load_push_users(self):
+        """加载 SteamID -> QQ号列表 的私聊推送映射"""
+        path = self._get_push_users_path()
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    self.push_users = json.load(f)
+            except Exception as e:
+                logger.warning(f"加载 push_users.json 失败: {e}")
+                self.push_users = {}
+        else:
+            self.push_users = {}
+
+    def _save_push_users(self):
+        """保存 SteamID -> QQ号列表 的私聊推送映射"""
+        path = self._get_push_users_path()
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(self.push_users, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.warning(f"保存 push_users.json 失败: {e}")
+
+    def _get_user_notify_sessions_path(self):
+        """获取 user_notify_sessions.json 文件路径"""
+        return os.path.join(self.data_dir, "user_notify_sessions.json")
+
+    def _load_user_notify_sessions(self):
+        """加载 QQ号 -> unified_msg_origin 的私聊会话映射"""
+        path = self._get_user_notify_sessions_path()
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    self.user_notify_sessions = json.load(f)
+                logger.info(f"[SteamStatusMonitor] 已加载 user_notify_sessions: {self.user_notify_sessions}")
+            except Exception as e:
+                logger.warning(f"加载 user_notify_sessions.json 失败: {e}")
+                self.user_notify_sessions = {}
+        else:
+            self.user_notify_sessions = {}
+
+    def _save_user_notify_sessions(self):
+        """保存 QQ号 -> unified_msg_origin 的私聊会话映射"""
+        if hasattr(self, 'user_notify_sessions'):
+            path = self._get_user_notify_sessions_path()
+            try:
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(self.user_notify_sessions, f, ensure_ascii=False)
+                logger.info(f"[SteamStatusMonitor] 已保存 user_notify_sessions: {self.user_notify_sessions}")
+            except Exception as e:
+                logger.warning(f"保存 user_notify_sessions.json 失败: {e}")
+
+    def _build_private_session(self, event_session, qq_id):
+        """根据当前事件的 unified_msg_origin 构造私聊会话标识
+        例如将 'QQ官方:GroupMessage:群号' 转为 'QQ官方:FriendMessage:QQ号'
+        或将 'aiocqhttp:GroupMessage:群号' 转为 'aiocqhttp:FriendMessage:QQ号'
+        """
+        if not event_session:
+            return None
+        parts = str(event_session).split(':')
+        if len(parts) >= 3:
+            # 替换消息类型和目标ID
+            parts[1] = 'FriendMessage'
+            parts[2] = str(qq_id)
+            return ':'.join(parts[:3])
+        return None
+
+    def _collect_push_user_sessions(self, sid, notify_sessions):
+        """将 push_users 中指定 SteamID 关联的私聊会话加入推送列表"""
+        for push_uid in self.push_users.get(sid, []):
+            user_session = getattr(self, 'user_notify_sessions', {}).get(push_uid, None)
+            if user_session and user_session not in notify_sessions:
+                notify_sessions.append(user_session)
+
     def _normalize_base_url(self, value, default):
         if not value:
             return default
@@ -334,6 +412,8 @@ class SteamStatusMonitorV2(Star):
             'https://www.steamgriddb.com'
         )
         self._load_push_groups()  # <--- 修复：确保push_groups属性初始化
+        self._load_push_users()   # 加载私聊推送映射
+        self._load_user_notify_sessions()  # 加载私聊会话标识
 
     async def init_poll_time_once(self):
         '''插件启动后10秒内进行一次全员初始化轮询，设置每个SteamID的next_poll_time，并输出一次初始日志'''
@@ -703,6 +783,7 @@ class SteamStatusMonitorV2(Star):
             push_session = getattr(self, 'notify_sessions', {}).get(push_gid, None)
             if push_session and push_session not in notify_sessions:
                 notify_sessions.append(push_session)
+        self._collect_push_user_sessions(steamid, notify_sessions)
         # 图片推送
         if details:
             unlocked_set = await self.achievement_monitor.get_player_achievements(self.API_KEY, group_id, steamid, gameid)
@@ -935,6 +1016,10 @@ class SteamStatusMonitorV2(Star):
         self.group_monitor_enabled.clear()
         self.group_achievement_enabled.clear()
         self.notify_sessions = {}
+        self.push_users = {}
+        self.user_notify_sessions = {}
+        self._save_push_users()
+        self._save_user_notify_sessions()
         self._save_persistent_data()  # 清空后保存
         yield event.plain_result("Steam状态监控插件已重置，所有状态已清空。")
 
@@ -952,6 +1037,8 @@ class SteamStatusMonitorV2(Star):
             "/steam delid [SteamID] - 删除SteamID\n"
             "/steam push_group [SteamID] - 添加id到联动推送的副群\n"
             "/steam delpush_group [SteamID] - 删除id联动推送的副群\n"
+            "/steam push_user [SteamID] [QQ号] - 添加私聊推送\n"
+            "/steam delpush_user [SteamID] [QQ号] - 删除私聊推送\n"
             "/steam openbox [SteamID] - 查看指定SteamID的全部信息\n"
             "/steam rs - 清除状态并初始化\n"
             "/steam help - 显示本帮助\n"
@@ -1203,6 +1290,7 @@ class SteamStatusMonitorV2(Star):
                 push_session = getattr(self, 'notify_sessions', {}).get(push_gid, None)
                 if push_session and push_session not in notify_sessions:
                     notify_sessions.append(push_session)
+            self._collect_push_user_sessions(sid, notify_sessions)
             for session in notify_sessions:
                 try:
                     from datetime import datetime
@@ -1335,6 +1423,7 @@ class SteamStatusMonitorV2(Star):
                         push_session = getattr(self, 'notify_sessions', {}).get(push_gid, None)
                         if push_session and push_session not in notify_sessions:
                             notify_sessions.append(push_session)
+                    self._collect_push_user_sessions(sid, notify_sessions)
                     for session in notify_sessions:
                         await self.context.send_message(session, MessageChain([Plain(msg)]))
                     last_states[sid] = status
@@ -1351,6 +1440,7 @@ class SteamStatusMonitorV2(Star):
                     push_session = getattr(self, 'notify_sessions', {}).get(push_gid, None)
                     if push_session and push_session not in notify_sessions:
                         notify_sessions.append(push_session)
+                self._collect_push_user_sessions(sid, notify_sessions)
                 # 渲染图片只做一次
                 img_path = None
                 try:
@@ -1473,6 +1563,7 @@ class SteamStatusMonitorV2(Star):
                             push_session = getattr(self, 'notify_sessions', {}).get(push_gid, None)
                             if push_session and push_session not in notify_sessions:
                                 notify_sessions.append(push_session)
+                        self._collect_push_user_sessions(sid, notify_sessions)
                         if notify_sessions:
                             try:
                                 from datetime import datetime
@@ -1641,3 +1732,88 @@ class SteamStatusMonitorV2(Star):
         self._save_push_groups()
         yield event.plain_result(f"本群已从SteamID {steamid} 的联动推送组移除。")
 
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    @filter.command("steam push_user")
+    async def steam_push_user(self, event: AstrMessageEvent, steamid: str, qq_id = None):
+        '''将指定QQ号加入指定SteamID的私聊推送列表
+        群聊中使用：/steam push_user [SteamID] [QQ号]
+        私聊中使用：/steam push_user [SteamID]（自动使用发送者QQ号）'''
+        steamid = str(steamid)
+        if not steamid.isdigit() or len(steamid) != 17:
+            yield event.plain_result("SteamID无效（需为64位数字串，17位）")
+            return
+        # 检查是否有任何群正在监控该SteamID
+        found = False
+        for gid, ids in self.group_steam_ids.items():
+            if steamid in ids:
+                found = True
+                break
+        if not found:
+            yield event.plain_result("未找到已轮询该SteamID的主群，请先在任一群添加并开启监控。")
+            return
+        # 确定QQ号：如果在私聊中没有提供qq_id，则使用发送者ID
+        if qq_id is not None:
+            qq_id = str(qq_id)
+        else:
+            # 私聊场景，自动获取发送者ID
+            try:
+                qq_id = str(event.get_sender_id())
+            except Exception:
+                yield event.plain_result("无法获取发送者QQ号，请手动指定：/steam push_user [SteamID] [QQ号]")
+                return
+        qq_id = str(qq_id)
+        if not qq_id.isdigit():
+            yield event.plain_result("QQ号无效（需为纯数字）")
+            return
+        # 构造私聊会话标识
+        private_session = self._build_private_session(event.unified_msg_origin, qq_id)
+        if not private_session:
+            yield event.plain_result("无法构造私聊会话标识，请稍后重试。")
+            return
+        # 保存推送映射
+        self.push_users.setdefault(steamid, [])
+        if qq_id not in self.push_users[steamid]:
+            self.push_users[steamid].append(qq_id)
+            self._save_push_users()
+        # 保存私聊会话标识
+        if not hasattr(self, 'user_notify_sessions'):
+            self.user_notify_sessions = {}
+        self.user_notify_sessions[qq_id] = private_session
+        self._save_user_notify_sessions()
+        yield event.plain_result(f"已将QQ号 {qq_id} 加入SteamID {steamid} 的私聊推送列表。")
+
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    @filter.command("steam delpush_user")
+    async def steam_delpush_user(self, event: AstrMessageEvent, steamid: str, qq_id = None):
+        '''将指定QQ号从指定SteamID的私聊推送列表移除
+        群聊中使用：/steam delpush_user [SteamID] [QQ号]
+        私聊中使用：/steam delpush_user [SteamID]（自动使用发送者QQ号）'''
+        steamid = str(steamid)
+        if not steamid.isdigit() or len(steamid) != 17:
+            yield event.plain_result("SteamID无效（需为64位数字串，17位）")
+            return
+        if qq_id is not None:
+            qq_id = str(qq_id)
+        else:
+            try:
+                qq_id = str(event.get_sender_id())
+            except Exception:
+                yield event.plain_result("无法获取发送者QQ号，请手动指定：/steam delpush_user [SteamID] [QQ号]")
+                return
+        qq_id = str(qq_id)
+        if not qq_id.isdigit():
+            yield event.plain_result("QQ号无效（需为纯数字）")
+            return
+        if steamid not in self.push_users or qq_id not in self.push_users[steamid]:
+            yield event.plain_result(f"QQ号 {qq_id} 未在SteamID {steamid} 的私聊推送列表中。")
+            return
+        self.push_users[steamid].remove(qq_id)
+        if not self.push_users[steamid]:
+            self.push_users.pop(steamid)
+        self._save_push_users()
+        # 检查该QQ号是否还被其他SteamID引用，如果没有则清理会话
+        still_used = any(qq_id in uids for uids in self.push_users.values())
+        if not still_used and hasattr(self, 'user_notify_sessions'):
+            self.user_notify_sessions.pop(qq_id, None)
+            self._save_user_notify_sessions()
+        yield event.plain_result(f"已将QQ号 {qq_id} 从SteamID {steamid} 的私聊推送列表移除。")

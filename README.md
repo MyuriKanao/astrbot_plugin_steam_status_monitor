@@ -9,6 +9,7 @@
 - 支持定时轮询多个 SteamID 的状态，分群管理，每个群聊可独立配置监控玩家
 - 检测玩家上线、下线、开始/切换/退出游戏等状态变更，自动推送游戏启动/关闭提醒
 - 成就变动自动推送提醒
+- 支持联动推送多个群聊，**支持私聊推送**功能
 - 已配置自动轮询频率，默认为1-30分钟查询一次状态，取决于steam的上次在线时间，可以在后台修改
 - 持久化记录玩家游玩日志，重启bot后状态不会丢失
 
@@ -43,6 +44,7 @@
 ![开始游戏示例](https://raw.githubusercontent.com/Maoer233/astrbot_plugin_steam_status_monitor/main/str.png)
 ![结束游戏示例](https://raw.githubusercontent.com/Maoer233/astrbot_plugin_steam_status_monitor/main/stop.png)
 ![成就推送示例](https://raw.githubusercontent.com/Maoer233/astrbot_plugin_steam_status_monitor/main/achievement.png)
+![私聊推送示例](https://raw.githubusercontent.com/Maoer233/astrbot_plugin_steam_status_monitor/main/push_user.png)
 
 
 ## 指令列表
@@ -55,7 +57,9 @@
 - `/steam addid [SteamID]` 添加SteamID到本群监控列表
 - `/steam delid [SteamID]` 从本群监控列表删除SteamID
 - `/steam push_group [SteamID]` 添加id到联动推送的副群（轮询一次通知多个群聊）
-- `/steam delpush_group [SteamID]`删除id联动推送的副群
+- `/steam delpush_group [SteamID]` 删除id联动推送的副群
+- `/steam push_user [SteamID] [QQ号]` 添加私聊推送（群聊中使用需指定QQ号，私聊中可省略QQ号）
+- `/steam delpush_user [SteamID] [QQ号]` 删除私聊推送
 - `/steam openbox [SteamID]` 查看指定SteamID的全部详细信息
 - `/steam rs` 清除所有状态并初始化
 - `/steam achievement_on` 开启本群Steam成就推送
@@ -82,6 +86,9 @@ pip install httpx pillow
 > 如果本项目对您的生活 / 工作产生了帮助，或者您关注本项目的未来发展，请给项目 Star，这是我维护这个开源项目的动力 ❤️。
 
 ## 更新记录
+- V2.2.1
+新增私聊推送功能，支持使用 `/steam push_user` 将玩家动态独立推送到单个用户的私聊中
+
 - V2.2.0
 添加了缺失的封面的图片显示
 添加了新功能，可以将已经轮询中账号，联动推送到多个副群（适用于多个粉丝群的情况）
